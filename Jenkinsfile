@@ -19,13 +19,13 @@ pipeline {
 
         stage('Maven Build') {
             steps {
-                sh 'mvn clean package'
+                bat 'mvn clean package'
             }
         }
 
         stage('Terraform Init') {
             steps {
-                sh '''
+                bat '''
                 cd terraform
                 terraform init
                 '''
@@ -34,7 +34,7 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                sh '''
+                bat '''
                 cd terraform
                 terraform apply -auto-approve
                 '''
@@ -43,14 +43,19 @@ pipeline {
 
         stage('Deploy WAR to Tomcat') {
             steps {
-                sh '''
+                bat '''
                 cd terraform
-                EC2_IP=$(terraform output -raw public_ip)
 
-                echo "Deploying to $EC2_IP"
+                rem Fetch public IP from Terraform output
+                for /f %%i in ('terraform output -raw public_ip') do set EC2_IP=%%i
 
-                scp -o StrictHostKeyChecking=no ../target/*.war ubuntu@$EC2_IP:/var/lib/tomcat9/webapps/
-                ssh -o StrictHostKeyChecking=no ubuntu@$EC2_IP "sudo systemctl restart tomcat9"
+                echo Deploying to %EC2_IP%
+
+                rem Copy WAR file to EC2 using PuTTY pscp
+                "C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ..\\target\\*.war ubuntu@%EC2_IP%:/var/lib/tomcat9/webapps/
+
+                rem Restart tomcat via SSH using plink
+                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% "sudo systemctl restart tomcat9"
                 '''
             }
         }
