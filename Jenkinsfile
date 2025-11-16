@@ -3,6 +3,10 @@ pipeline {
 
     environment {
         GIT_CREDENTIALS = 'github-token'
+
+        // Inject AWS credentials from Jenkins credentials store
+        AWS_ACCESS_KEY_ID     = credentials('aws_access_key')
+        AWS_SECRET_ACCESS_KEY = credentials('aws_secret_key')
     }
 
     stages {
