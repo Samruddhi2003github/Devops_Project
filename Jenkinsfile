@@ -3,10 +3,6 @@ pipeline {
 
     environment {
         AWS_REGION = "eu-north-1"
-
-        // These are already created in your Jenkins
-        AWS_ACCESS_KEY_ID     = credentials('aws_access_key')
-        AWS_SECRET_ACCESS_KEY = credentials('aws_secret_key')
     }
 
     stages {
@@ -23,7 +19,7 @@ pipeline {
 
         stage('Maven Build') {
             steps {
-                bat "mvn clean package"
+                bat 'mvn clean package'
             }
         }
 
@@ -35,50 +31,57 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                bat 'terraform -chdir=terraform apply -auto-approve'
+                withCredentials([
+                    string(credentialsId: 'aws_access_key', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws_secret_key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    bat 'terraform -chdir=terraform apply -auto-approve'
+                }
             }
         }
 
         stage('Get EC2 IP') {
             steps {
                 script {
-                    def rawIp = bat(
+                    def ip = bat(
                         script: '@echo off & terraform -chdir=terraform output -raw public_ip',
                         returnStdout: true
                     ).trim()
 
-                    env.EC2_IP = rawIp
+                    env.EC2_IP = ip
                     echo "EC2 Public IP = ${env.EC2_IP}"
                 }
             }
         }
 
-        stage("Wait for EC2 Instance") {
+        stage('Wait for EC2') {
             steps {
-                echo "Waiting 30 seconds for EC2 to be ready..."
-                sleep(time: 30, unit: "SECONDS")
+                echo "Waiting 25 seconds for EC2..."
+                sleep(time: 25, unit: "SECONDS")
             }
         }
 
         stage('Deploy WAR to Tomcat10') {
             steps {
                 script {
-
-                    def PPK = "C:\\\\ProgramData\\\\Jenkins\\\\keys\\\\ipat-eunorth1.ppk"
-
                     echo "Uploading WAR to EC2: ${env.EC2_IP}"
 
-                    // Step 1: Upload WAR file
                     bat """
-"C:\\Program Files\\PuTTY\\pscp.exe" -i "${PPK}" target\\firststsproject-0.0.1-SNAPSHOT.war ubuntu@${EC2_IP}:/home/ubuntu/app.war
-"""
+                      "C:\\Program Files\\PuTTY\\pscp.exe" -batch ^
+                       -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
+                       target\\firststsproject-0.0.1-SNAPSHOT.war ^
+                       ubuntu@${EC2_IP}:/home/ubuntu/app.war
+                    """
 
-                    // Step 2: Move WAR into Tomcat10
+                    echo "Restarting Tomcat..."
+
                     bat """
-"C:\\Program Files\\PuTTY\\plink.exe" -i "${PPK}" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
-"""
+                      "C:\\Program Files\\PuTTY\\plink.exe" -batch ^
+                       -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
+                       ubuntu@${EC2_IP} ^
+                       "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
+                    """
 
-                    echo "Deployment Completed Successfully!"
                 }
             }
         }
