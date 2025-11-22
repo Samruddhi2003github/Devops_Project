@@ -5,10 +5,6 @@ pipeline {
         AWS_REGION = "eu-north-1"
     }
 
-    tools {
-        terraform 'terraform'
-    }
-
     stages {
 
         stage('Checkout Code') {
@@ -45,7 +41,6 @@ pipeline {
                         script: '@echo off & terraform -chdir=terraform output -raw public_ip',
                         returnStdout: true
                     ).trim()
-
                     env.EC2_IP = rawIp.split()[-1].trim()
                     echo "EC2 Public IP = ${env.EC2_IP}"
                 }
@@ -65,7 +60,7 @@ pipeline {
                     script {
                         echo "Deploying WAR file to EC2..."
 
-                        // Step 1 - Upload WAR
+                        // Upload the WAR
                         bat """
 for %%f in (target\\*.war) do (
   echo Uploading WAR: %%f
@@ -73,12 +68,12 @@ for %%f in (target\\*.war) do (
 )
 """
 
-                        // Step 2 - Verify
+                        // Verify WAR exists
                         bat """
 plink -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" ubuntu@${EC2_IP} "ls -lh /home/ubuntu/app.war || echo 'WAR file not found!'"
 """
 
-                        // Step 3 - Move and restart
+                        // Move & restart
                         bat """
 plink -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
 """
