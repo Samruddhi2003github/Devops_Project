@@ -2,18 +2,18 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION = "eu-north-1"
+        AWS_ACCESS_KEY_ID     = credentials('aws_access_key')
+        AWS_SECRET_ACCESS_KEY = credentials('aws_secret_key')
+        PATH = "C:\\Program Files\\Terraform;C:\\Program Files\\PuTTY;${env.PATH}"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git(
-                    url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
-                    credentialsId: 'github-token',
-                    branch: 'main'
-                )
+                git url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
+                    branch: 'main',
+                    credentialsId: 'github-token'
             }
         }
 
@@ -31,57 +31,49 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws_access_key', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws_secret_key', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    bat 'terraform -chdir=terraform apply -auto-approve'
-                }
+                bat 'terraform -chdir=terraform apply -auto-approve'
             }
         }
 
         stage('Get EC2 IP') {
             steps {
                 script {
-                    def ip = bat(
-                        script: '@echo off & terraform -chdir=terraform output -raw public_ip',
-                        returnStdout: true
-                    ).trim()
+                    def output = bat(returnStdout: true, script: '''
+                        terraform -chdir=terraform output -raw public_ip
+                    ''').trim()
 
-                    env.EC2_IP = ip
-                    echo "EC2 Public IP = ${env.EC2_IP}"
+                    env.EC2_PUBLIC_IP = output
+                    echo "EC2 Public IP = ${env.EC2_PUBLIC_IP}"
                 }
             }
         }
 
         stage('Wait for EC2') {
             steps {
-                echo "Waiting 25 seconds for EC2..."
-                sleep(time: 25, unit: "SECONDS")
+                echo "Waiting 20 seconds for EC2..."
+                sleep 20
             }
         }
 
         stage('Deploy WAR to Tomcat10') {
             steps {
                 script {
-                    echo "Uploading WAR to EC2: ${env.EC2_IP}"
+                    // IMPORTANT: Disable host key checking (Alok style)
+                    echo "Uploading WAR to EC2: ${env.EC2_PUBLIC_IP}"
 
                     bat """
-                      "C:\\Program Files\\PuTTY\\pscp.exe" -batch ^
-                       -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
-                       target\\firststsproject-0.0.1-SNAPSHOT.war ^
-                       ubuntu@${EC2_IP}:/home/ubuntu/app.war
+                    echo y | "C:\\Program Files\\PuTTY\\pscp.exe" ^
+                        -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
+                        target\\firststsproject-0.0.1-SNAPSHOT.war ^
+                        ubuntu@${env.EC2_PUBLIC_IP}:/home/ubuntu/app.war
                     """
 
-                    echo "Restarting Tomcat..."
-
+                    // Restart Tomcat
                     bat """
-                      "C:\\Program Files\\PuTTY\\plink.exe" -batch ^
-                       -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
-                       ubuntu@${EC2_IP} ^
-                       "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
+                    echo y | "C:\\Program Files\\PuTTY\\plink.exe" ^
+                        -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
+                        ubuntu@${env.EC2_PUBLIC_IP} "sudo systemctl restart tomcat9"
                     """
-
                 }
             }
         }
