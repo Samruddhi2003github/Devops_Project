@@ -38,41 +38,47 @@ pipeline {
         stage('Get EC2 IP') {
             steps {
                 script {
-                    def output = bat(returnStdout: true, script: '''
-                        terraform -chdir=terraform output -raw public_ip
-                    ''').trim()
+                    def raw = bat(
+                        returnStdout: true,
+                        script: 'terraform -chdir=terraform output -raw public_ip'
+                    ).trim()
 
-                    env.EC2_PUBLIC_IP = output
-                    echo "EC2 Public IP = ${env.EC2_PUBLIC_IP}"
+                    // Clean IP: take only last line
+                    def ip = raw.readLines().last().trim()
+
+                    env.EC2_PUBLIC_IP = ip
+                    echo "EXTRACTED EC2 IP = ${env.EC2_PUBLIC_IP}"
                 }
             }
         }
 
         stage('Wait for EC2') {
             steps {
-                echo "Waiting 20 seconds for EC2..."
-                sleep 20
+                echo "Waiting 25 seconds for EC2..."
+                sleep 25
             }
         }
 
         stage('Deploy WAR to Tomcat10') {
             steps {
                 script {
-                    // IMPORTANT: Disable host key checking (Alok style)
                     echo "Uploading WAR to EC2: ${env.EC2_PUBLIC_IP}"
 
+                    // Upload WAR file
                     bat """
-                    echo y | "C:\\Program Files\\PuTTY\\pscp.exe" ^
+                    "C:\\Program Files\\PuTTY\\pscp.exe" ^
+                        -batch ^
                         -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
                         target\\firststsproject-0.0.1-SNAPSHOT.war ^
                         ubuntu@${env.EC2_PUBLIC_IP}:/home/ubuntu/app.war
                     """
 
-                    // Restart Tomcat
+                    // Restart Tomcat 10 (correct for your EC2)
                     bat """
-                    echo y | "C:\\Program Files\\PuTTY\\plink.exe" ^
+                    "C:\\Program Files\\PuTTY\\plink.exe" ^
+                        -batch ^
                         -i "C:\\ProgramData\\Jenkins\\keys\\ipat-eunorth1.ppk" ^
-                        ubuntu@${env.EC2_PUBLIC_IP} "sudo systemctl restart tomcat9"
+                        ubuntu@${env.EC2_PUBLIC_IP} "sudo systemctl restart tomcat10"
                     """
                 }
             }
