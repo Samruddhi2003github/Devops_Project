@@ -3,15 +3,21 @@ pipeline {
 
     environment {
         AWS_REGION = "eu-north-1"
+
+        // These are already created in your Jenkins
+        AWS_ACCESS_KEY_ID     = credentials('aws_access_key')
+        AWS_SECRET_ACCESS_KEY = credentials('aws_secret_key')
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
+                git(
+                    url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
                     credentialsId: 'github-token',
                     branch: 'main'
+                )
             }
         }
 
@@ -29,16 +35,11 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws_access_key', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws_secret_key', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    bat 'terraform -chdir=terraform apply -auto-approve'
-                }
+                bat 'terraform -chdir=terraform apply -auto-approve'
             }
         }
 
-        stage("Get EC2 IP") {
+        stage('Get EC2 IP') {
             steps {
                 script {
                     def rawIp = bat(
@@ -59,27 +60,25 @@ pipeline {
             }
         }
 
-        stage("Deploy WAR to Tomcat10") {
+        stage('Deploy WAR to Tomcat10') {
             steps {
-
                 script {
+
+                    def PPK = "C:\\\\ProgramData\\\\Jenkins\\\\keys\\\\ipat-eunorth1.ppk"
 
                     echo "Uploading WAR to EC2: ${env.EC2_IP}"
 
-                    // STEP 1: Upload WAR using full path to pscp.exe
+                    // Step 1: Upload WAR file
                     bat """
-"C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" target\\firststsproject-0.0.1-SNAPSHOT.war ubuntu@${EC2_IP}:/home/ubuntu/app.war
+"C:\\Program Files\\PuTTY\\pscp.exe" -i "${PPK}" target\\firststsproject-0.0.1-SNAPSHOT.war ubuntu@${EC2_IP}:/home/ubuntu/app.war
 """
 
-                    // STEP 2: Move WAR to tomcat10 webapps
+                    // Step 2: Move WAR into Tomcat10
                     bat """
-"C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/"
+"C:\\Program Files\\PuTTY\\plink.exe" -i "${PPK}" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
 """
 
-                    // STEP 3: Restart tomcat10 service
-                    bat """
-"C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@${EC2_IP} "sudo systemctl restart tomcat10"
-"""
+                    echo "Deployment Completed Successfully!"
                 }
             }
         }
