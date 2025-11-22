@@ -55,11 +55,14 @@ pipeline {
 
                 echo Deploying to %EC2_IP%
 
-                rem Copy WAR file to EC2 using PuTTY pscp (TOMCAT10!)
-                "C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ..\\target\\*.war ubuntu@%EC2_IP%:/var/lib/tomcat10/webapps/
+                rem Step 1: Copy WAR to home directory of EC2 (upload succeeds without sudo)
+                "C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ..\\target\\*.war ubuntu@%EC2_IP%:/home/ubuntu/
 
-                rem Restart Tomcat10 via SSH
-                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% "sudo systemctl restart tomcat10"
+                rem Step 2: Move WAR into Tomcat10 webapps folder using sudo INSIDE EC2
+                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% \"sudo mv /home/ubuntu/*.war /var/lib/tomcat10/webapps/\"
+
+                rem Step 3: Restart Tomcat10
+                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% \"sudo systemctl restart tomcat10\"
                 '''
             }
         }
