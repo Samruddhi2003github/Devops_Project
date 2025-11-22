@@ -2,68 +2,88 @@ pipeline {
     agent any
 
     environment {
-        GIT_CREDENTIALS = 'github-token'
+        AWS_REGION = "eu-north-1"
+    }
 
-        // Inject AWS credentials
-        AWS_ACCESS_KEY_ID     = credentials('aws_access_key')
-        AWS_SECRET_ACCESS_KEY = credentials('aws_secret_key')
+    tools {
+        terraform 'terraform'
     }
 
     stages {
 
-        stage('Clone Repo') {
+        stage('Checkout Code') {
             steps {
-                git(
-                    url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
-                    credentialsId: 'github-token',
-                    branch: 'main'
-                )
+                git 'https://github.com/rohitswabhav/firststsproject.git'
             }
         }
 
         stage('Maven Build') {
             steps {
-                bat 'mvn clean package'
+                bat "mvn clean package"
             }
         }
 
         stage('Terraform Init') {
             steps {
-                bat '''
-                cd terraform
-                terraform init
-                '''
+                bat 'terraform -chdir=terraform init'
             }
         }
 
-        stage('Terraform Apply') {
+        stage('Terraform Plan & Apply') {
             steps {
-                bat '''
-                cd terraform
-                terraform apply -auto-approve
-                '''
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+                    bat 'terraform -chdir=terraform plan'
+                    bat 'terraform -chdir=terraform apply -auto-approve'
+                }
             }
         }
 
-        stage('Deploy WAR to Tomcat') {
+        stage("Get EC2 IP") {
             steps {
-                bat '''
-                cd terraform
+                script {
+                    def rawIp = bat(
+                        script: '@echo off & terraform -chdir=terraform output -raw public_ip',
+                        returnStdout: true
+                    ).trim()
 
-                rem Fetch public IP from Terraform output
-                for /f %%i in ('terraform output -raw public_ip') do set EC2_IP=%%i
+                    env.EC2_IP = rawIp.split()[-1].trim()
+                    echo "EC2 Public IP = ${env.EC2_IP}"
+                }
+            }
+        }
 
-                echo Deploying to %EC2_IP%
+        stage("Wait for EC2 Instance") {
+            steps {
+                echo "Waiting 30 seconds for EC2 to be ready..."
+                sleep(time: 30, unit: "SECONDS")
+            }
+        }
 
-                rem Step 1: Copy WAR to home directory of EC2 (upload succeeds without sudo)
-                "C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ..\\target\\*.war ubuntu@%EC2_IP%:/home/ubuntu/
+        stage("Install Tomcat & Deploy WAR") {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'ipat-eunorth1', keyFileVariable: 'KEYFILE', usernameVariable: 'SSH_USER')]) {
+                    script {
+                        echo "Deploying WAR file to EC2..."
 
-                rem Step 2: Move WAR into Tomcat10 webapps folder using sudo INSIDE EC2
-                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% \"sudo mv /home/ubuntu/*.war /var/lib/tomcat10/webapps/\"
+                        // Step 1 - Upload WAR
+                        bat """
+for %%f in (target\\*.war) do (
+  echo Uploading WAR: %%f
+  pscp -v -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" "%%f" %SSH_USER%@${EC2_IP}:/home/%SSH_USER%/app.war
+)
+"""
 
-                rem Step 3: Restart Tomcat10
-                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% \"sudo systemctl restart tomcat10\"
-                '''
+                        // Step 2 - Verify
+                        bat """
+plink -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" ubuntu@${EC2_IP} "ls -lh /home/ubuntu/app.war || echo 'WAR file not found!'"
+"""
+
+                        // Step 3 - Move and restart
+                        bat """
+plink -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
+"""
+                    }
+                }
             }
         }
     }
