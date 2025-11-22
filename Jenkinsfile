@@ -9,11 +9,9 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                git(
-                    url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
+                git url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
                     credentialsId: 'github-token',
                     branch: 'main'
-                )
             }
         }
 
@@ -43,12 +41,12 @@ pipeline {
         stage("Get EC2 IP") {
             steps {
                 script {
-                    def output = bat(
+                    def rawIp = bat(
                         script: '@echo off & terraform -chdir=terraform output -raw public_ip',
                         returnStdout: true
                     ).trim()
 
-                    env.EC2_IP = output
+                    env.EC2_IP = rawIp
                     echo "EC2 Public IP = ${env.EC2_IP}"
                 }
             }
@@ -63,19 +61,25 @@ pipeline {
 
         stage("Deploy WAR to Tomcat10") {
             steps {
+
                 script {
 
                     echo "Uploading WAR to EC2: ${env.EC2_IP}"
 
-                    // Upload WAR file
+                    // STEP 1: Upload WAR using full path to pscp.exe
                     bat """
-                    pscp -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" target\\*.war ubuntu@${EC2_IP}:/home/ubuntu/app.war
-                    """
+"C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" target\\firststsproject-0.0.1-SNAPSHOT.war ubuntu@${EC2_IP}:/home/ubuntu/app.war
+"""
 
-                    // Move to Tomcat10 + restart
+                    // STEP 2: Move WAR to tomcat10 webapps
                     bat """
-                    plink -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
-                    """
+"C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/"
+"""
+
+                    // STEP 3: Restart tomcat10 service
+                    bat """
+"C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@${EC2_IP} "sudo systemctl restart tomcat10"
+"""
                 }
             }
         }
