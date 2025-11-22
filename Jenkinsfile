@@ -4,7 +4,7 @@ pipeline {
     environment {
         GIT_CREDENTIALS = 'github-token'
 
-        // Inject AWS credentials from Jenkins credentials store
+        // Inject AWS credentials
         AWS_ACCESS_KEY_ID     = credentials('aws_access_key')
         AWS_SECRET_ACCESS_KEY = credentials('aws_secret_key')
     }
@@ -55,11 +55,11 @@ pipeline {
 
                 echo Deploying to %EC2_IP%
 
-                rem Copy WAR file to EC2 using PuTTY pscp
-                "C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ..\\target\\*.war ubuntu@%EC2_IP%:/var/lib/tomcat9/webapps/
+                rem Copy WAR file to EC2 using PuTTY pscp (TOMCAT10!)
+                "C:\\Program Files\\PuTTY\\pscp.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ..\\target\\*.war ubuntu@%EC2_IP%:/var/lib/tomcat10/webapps/
 
-                rem Restart tomcat via SSH using plink
-                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% "sudo systemctl restart tomcat9"
+                rem Restart Tomcat10 via SSH
+                "C:\\Program Files\\PuTTY\\plink.exe" -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@%EC2_IP% "sudo systemctl restart tomcat10"
                 '''
             }
         }
