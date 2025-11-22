@@ -9,7 +9,11 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                git 'https://github.com/rohitswabhav/firststsproject.git'
+                git(
+                    url: 'https://github.com/Samruddhi2003github/Devops_Project.git',
+                    credentialsId: 'github-token',
+                    branch: 'main'
+                )
             }
         }
 
@@ -27,19 +31,24 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                bat 'terraform -chdir=terraform apply -auto-approve'
+                withCredentials([
+                    string(credentialsId: 'aws_access_key', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws_secret_key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    bat 'terraform -chdir=terraform apply -auto-approve'
+                }
             }
         }
 
         stage("Get EC2 IP") {
             steps {
                 script {
-                    def rawIp = bat(
+                    def output = bat(
                         script: '@echo off & terraform -chdir=terraform output -raw public_ip',
                         returnStdout: true
                     ).trim()
 
-                    env.EC2_IP = rawIp.split()[-1].trim()
+                    env.EC2_IP = output
                     echo "EC2 Public IP = ${env.EC2_IP}"
                 }
             }
@@ -52,31 +61,21 @@ pipeline {
             }
         }
 
-        stage("Install Tomcat & Deploy WAR") {
+        stage("Deploy WAR to Tomcat10") {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'ipat-eunorth1', keyFileVariable: 'KEYFILE', usernameVariable: 'SSH_USER')]) {
-                    script {
+                script {
 
-                        echo "Deploying WAR file to EC2..."
+                    echo "Uploading WAR to EC2: ${env.EC2_IP}"
 
-                        // Upload WAR
-                        bat """
-for %%f in (target\\*.war) do (
-  echo Uploading WAR: %%f
-  pscp -v -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" "%%f" %SSH_USER%@${EC2_IP}:/home/%SSH_USER%/app.war
-)
-"""
+                    // Upload WAR file
+                    bat """
+                    pscp -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" target\\*.war ubuntu@${EC2_IP}:/home/ubuntu/app.war
+                    """
 
-                        // Verify
-                        bat """
-plink -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" ubuntu@${EC2_IP} "ls -lh /home/ubuntu/app.war || echo 'WAR file not found!'"
-"""
-
-                        // Move & restart Tomcat10
-                        bat """
-plink -batch -i "%KEYFILE%" -hostkey "ssh-ed25519 255 SHA256:pWWe3ooQ+CaZneciIemS50Cl9vFT75LL3g404xy08kg" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
-"""
-                    }
+                    // Move to Tomcat10 + restart
+                    bat """
+                    plink -i "C:\\Users\\samruddhi.bansode\\Downloads\\ipat-eunorth1.ppk" ubuntu@${EC2_IP} "sudo mv /home/ubuntu/app.war /var/lib/tomcat10/webapps/ && sudo systemctl restart tomcat10"
+                    """
                 }
             }
         }
